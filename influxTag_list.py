@@ -69,6 +69,45 @@ def influx_measurements(db):
     return sorted(names)
 
 
+def influx_last_value(db, measurement):
+    """Return the most recent value (and time) of a measurement, or None if empty.
+
+    Prefers a field named 'value' (matches how the data is stored); otherwise
+    falls back to the first non-time field.
+    """
+    auth = (INFLUX_USER, INFLUX_PASS) if INFLUX_USER else None
+    safe = measurement.replace('"', '\\"')
+
+    resp = requests.get(
+        f"http://{INFLUX_HOST}:{INFLUX_PORT}/query",
+        params={"db": db, "q": f'SELECT * FROM "{safe}" ORDER BY time DESC LIMIT 1'},
+        auth=auth,
+        timeout=10,
+    )
+    resp.raise_for_status()
+
+    data = resp.json()
+
+    for result in data.get("results", []):
+        for series in result.get("series", []):
+            cols = series.get("columns", [])
+            values = series.get("values", [])
+            if not values:
+                continue
+
+            record = dict(zip(cols, values[0]))
+            time = record.get("time")
+
+            if "value" in record:
+                return {"value": record["value"], "time": time}
+
+            for c in cols:
+                if c != "time":
+                    return {"value": record[c], "time": time}
+
+    return {"value": None, "time": None}
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     conn = get_conn()
@@ -115,6 +154,18 @@ def measurements(db: str):
         return JSONResponse({"measurements": influx_measurements(db)})
     except Exception as ex:
         return JSONResponse({"error": str(ex), "measurements": []}, status_code=200)
+
+
+@app.get("/value")
+def value(db: str, measurement: str):
+    # latest polled value of a mapped old-tag; db must be one of the configured ones
+    if db not in INFLUX_DBS:
+        return JSONResponse({"error": "unknown db", "value": None}, status_code=400)
+
+    try:
+        return JSONResponse(influx_last_value(db, measurement))
+    except Exception as ex:
+        return JSONResponse({"error": str(ex), "value": None}, status_code=200)
 
 
 @app.post("/save")

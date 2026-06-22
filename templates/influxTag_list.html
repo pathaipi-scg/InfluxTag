@@ -230,6 +230,19 @@ button {
 .row-actions {
     display: flex;
     gap: 6px;
+    align-items: center;
+}
+
+.live-value {
+    margin-left: 6px;
+    padding: 2px 8px;
+    background: #1b3a2a;
+    color: #6ee7a8;
+    border: 1px solid #2f6b4a;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+    min-width: 40px;
+    text-align: right;
 }
 
 .inline-form {
@@ -386,6 +399,12 @@ button {
                     >
                         <button type="submit" class="btn-delete">Delete</button>
                     </form>
+
+                    <span
+                        class="live-value"
+                        data-db="{{ m.Influx_db }}"
+                        data-measurement="{{ m.Influx_oldTag }}"
+                    >…</span>
                 </div>
             </td>
         </tr>
@@ -570,6 +589,40 @@ document.querySelectorAll(".splitter").forEach(sp => {
             document.addEventListener("mouseup", onUp);
         });
     });
+})();
+
+// --- live value: pull the latest polled value from Influx for each mapped row ---
+(() => {
+    const cells = document.querySelectorAll(".live-value");
+    if (!cells.length) return;
+
+    function refresh() {
+        cells.forEach(td => {
+            const db = td.dataset.db;
+            const m = td.dataset.measurement;
+            if (!db || !m) { td.textContent = "-"; return; }
+
+            fetch("/value?db=" + encodeURIComponent(db) + "&measurement=" + encodeURIComponent(m),
+                  { cache: "no-store" })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        td.textContent = "err";
+                        td.title = data.error;
+                    } else if (data.value === null || data.value === undefined) {
+                        td.textContent = "(no data)";
+                        td.title = "";
+                    } else {
+                        td.textContent = data.value;
+                        td.title = data.time ? ("as of " + data.time) : "";
+                    }
+                })
+                .catch(err => { td.textContent = "err"; td.title = String(err); });
+        });
+    }
+
+    refresh();
+    setInterval(refresh, 5000);   // matches POLL_INTERVAL (5s)
 })();
 
 </script>
