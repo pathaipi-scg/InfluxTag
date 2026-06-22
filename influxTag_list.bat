@@ -1,8 +1,8 @@
 @echo off
 
-cd /d D:\AI\alarm_system
+cd /d D:\influxtag
 
 call .venv\Scripts\activate.bat
 
-python -m uvicorn alarm_list:app --host 0.0.0.0 --port 1865
+python -m uvicorn influxTag_list:app --host 0.0.0.0 --port 1866
 

@@ -1,0 +1,2 @@
+/* Styles live inline in templates/influxTag_list.html.
+   This file exists so the /static mount and base.html stylesheet link resolve. */

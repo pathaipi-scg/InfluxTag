@@ -6,7 +6,7 @@
         {% if value is mapping and value.get('_leaf') %}
             <li class="leaf {{ 'used-leaf' if value.used else '' }}">
                 {% if value.used %}
-                <span class="tag-name used-item" title="already mapped to an alarm">
+                <span class="tag-name used-item" title="already mapped">
                     {{ key }}
                 </span>
                 {% else %}
@@ -57,27 +57,6 @@ input,
 select {
     width: 100%;
     box-sizing: border-box;
-}
-
-
-.header-bar {
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    margin-bottom:15px;
-}
-
-.mapping-table th {
-    background: #333;
-}
-
-.mapping-table td {
-    background: #252526;
-    border: 1px solid #444;
-}
-
-input,
-select {
     background: #333;
     color: white;
     border: 1px solid #555;
@@ -88,10 +67,14 @@ button {
     color: white;
     border: none;
     padding: 5px 10px;
+    border-radius: 4px;
 }
 
-.page-title {
-    margin-bottom: 20px;
+.header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
 }
 
 .top-row {
@@ -103,12 +86,7 @@ button {
 }
 
 .opc-panel {
-    flex: 0 0 42%;
-    overflow: auto;
-}
-
-.mp3-panel {
-    flex: 0 0 28%;
+    flex: 0 0 50%;
     overflow: auto;
 }
 
@@ -130,9 +108,10 @@ button {
     background-color: #0e639c;
 }
 
-.tree,
-.mp3-list {
+.tree {
     white-space: nowrap;
+    list-style-type: none;
+    padding-left: 18px;
 }
 
 .panel {
@@ -140,11 +119,6 @@ button {
     border: 1px solid #444;
     border-radius: 6px;
     padding: 10px;
-}
-
-.tree {
-    list-style-type: none;
-    padding-left: 18px;
 }
 
 .tree li {
@@ -165,31 +139,12 @@ button {
     font-size: 11px;
 }
 
-.mp3-list {
-    margin: 0;
-    padding-left: 20px;
-}
-
-.mp3-list li {
-    margin-bottom: 4px;
-}
-
-.mp3-click {
-    cursor: pointer;
-    color: #4fc3f7;
-}
-
-.mp3-click:hover {
-    text-decoration: underline;
-}
-
 .table-container {
     flex: 1 1 0;
     min-height: 0;
     overflow: auto;
 }
 
-/* draggable bar to resize the mapping table height (like the other panels) */
 .splitter-h {
     height: 4px;
     cursor: row-resize;
@@ -203,27 +158,26 @@ button {
     background-color: #0e639c;
 }
 
-/* tags / mp3 already used: greyed out and not selectable */
+/* new tags already mapped: greyed out and not selectable */
 .used-leaf {
     opacity: 0.55;
 }
 
-.used-item,
-.mp3-used {
+.used-item {
     color: #777;
     cursor: not-allowed;
-}
-
-.mapping-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: 10;
 }
 
 .mapping-table {
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
+}
+
+.mapping-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .mapping-table th {
@@ -236,24 +190,34 @@ button {
     background: #252526;
     border: 1px solid #444;
     padding: 6px;
+    word-break: break-word;
 }
 
-.enabled {
-    color: green;
-    font-weight: bold;
+/* draggable handle on the right edge of each header cell */
+.mapping-table th {
+    position: relative;
 }
 
-.disabled {
-    color: red;
-    font-weight: bold;
+.col-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+}
+
+.col-resizer:hover,
+.col-resizer.dragging {
+    background: #0e639c;
 }
 
 .section-title {
     margin-top: 0;
 }
 
-.tag-click,
-.mp3-click {
+.tag-click {
     cursor: pointer;
 }
 
@@ -261,12 +225,6 @@ button {
     background: #1d4ed8;
     color: white;
     border: 1px solid #3b82f6;
-}
-
-.selected-mp3 {
-    background: #15803d;
-    color: white;
-    border: 1px solid #22c55e;
 }
 
 .row-actions {
@@ -279,20 +237,11 @@ button {
     margin: 0;
 }
 
-.edit-click {
-    cursor: pointer;
-}
-
-button {
-    border-radius: 4px;
-}
-
 .form-panel button[type="submit"] {
     width: 100%;
     font-weight: bold;
 }
 
-/* action button colors */
 .btn-edit {
     background: #16a34a;
 }
@@ -309,30 +258,25 @@ button {
     background: #b91c1c;
 }
 
-.btn-test {
-    background: #2563eb;
-}
-
-.btn-test:hover {
-    background: #1d4ed8;
+.arrow {
+    color: #4fc3f7;
+    font-weight: bold;
 }
 
 </style>
 
 <div class="header-bar">
-    <h1>🔊 Alarm Management Console 🔊</h1>
+    <h1>🔁 Influx Tag Mapping (old → new)</h1>
 
     <form method="post" action="/refresh">
-        <button type="submit">
-            Refresh OPC Tree
-        </button>
+        <button type="submit">Refresh OPC Tree</button>
     </form>
 </div>
 
 <div class="top-row">
 
     <div class="panel opc-panel">
-        <h2 class="section-title">OPC Tag Tree</h2>
+        <h2 class="section-title">OPC Tag Tree (new tag)</h2>
 
         {% if tree %}
             {{ render_tree(tree) }}
@@ -343,42 +287,15 @@ button {
 
     <div class="splitter" data-splitter="left"></div>
 
-    <div class="panel mp3-panel">
-        <h2 class="section-title">MP3 Files ({{ mp3_files|length }})</h2>
-
-        {% if mp3_files %}
-        <ul class="mp3-list">
-            {% for f in mp3_files %}
-            <li>
-                {% if f.lower() in used_mp3 %}
-                <span class="mp3-used" title="already used by an alarm">
-                    {{ f }}
-                </span>
-                {% else %}
-                <span class="mp3-click"
-                    data-file="{{ f }}">
-                    {{ f }}
-                </span>
-                {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-        {% else %}
-            <p>No MP3 files found.</p>
-        {% endif %}
-    </div>
-     <div class="splitter" data-splitter="right"></div>
-
-     <div class="panel form-panel">
-        <h2>Create Alarm</h2>
-
+    <div class="panel form-panel">
+        <h2 class="section-title">Map Tag</h2>
 
         <form method="post" action="/save">
 
-            <input type="hidden" id="alarm_id" name="alarmid">
+            <input type="hidden" id="influx_id" name="influxid">
 
             <div>
-                <label>Selected Tag</label><br>
+                <label>New Tag (from OPC tree)</label><br>
                 <input type="text" id="tag_path" name="tagpath" readonly>
             </div>
 
@@ -392,118 +309,89 @@ button {
             <br>
 
             <div>
-                <label>MP3 File</label><br>
-                <input type="text" id="mp3_file" name="mp3file" readonly>
-            </div>
-
-            <br>
-
-            <div>
-                <label>Alarm Mode</label><br>
-                <select id="alarm_mode" name="alarmmode">
-                    <option value="HIGH">HIGH</option>
-                    <option value="LOW">LOW</option>
-                    <option value="CHANGE">CHANGE</option>
+                <label>Influx DB (where the old tag lives)</label><br>
+                <select id="influx_db" name="influx_db">
+                    <option value="">-- select database --</option>
+                    {% for db in influx_dbs %}
+                    <option value="{{ db }}">{{ db }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
             <br>
 
             <div>
-                <label>Threshold High</label><br>
-                <input type="number" step="0.01" id="threshold_high" name="thresholdhigh">
+                <label>Old Tag (measurement name)</label><br>
+                <input
+                    type="text"
+                    id="influx_oldtag"
+                    name="influx_oldtag"
+                    list="oldtag_options"
+                    autocomplete="off"
+                    placeholder="select a DB to load suggestions, or type">
+                <datalist id="oldtag_options"></datalist>
+                <small id="oldtag_hint" style="color:#888;"></small>
             </div>
 
             <br>
 
-            <div>
-                <label>Threshold Low</label><br>
-                <input type="number" step="0.01" id="threshold_low" name="thresholdlow">
-            </div>
-
-            <br>
-
-            <div>
-                <label>Priority</label><br>
-                <input type="number" id="priority" name="priority" value="1">
-            </div>
-
-            <br>
-
-            <div>
-                <label>Repeat (times to play, default 3)</label><br>
-                <input type="number" min="1" id="repeat_count" name="repeatcount" value="3">
-            </div>
-
-            <br>
-
-            <button type="submit">
-                Save Alarm
-            </button>
+            <button type="submit">Save Mapping</button>
 
         </form>
-     </div>
+    </div>
 </div>
+
 <div class="splitter-h" id="table-splitter" title="drag to resize table height"></div>
 
-
-<h2>Current Alarm Mapping</h2>
+<h2>Current Tag Mapping</h2>
 <div class="table-container">
 <table class="mapping-table">
     <thead>
         <tr>
-            <th>TagPath</th>
-            <th>Mp3File</th>
+            <th>Old Tag</th>
+            <th>Influx DB</th>
+            <th></th>
+            <th>New Tag (TagPath)</th>
             <th>Actions</th>
         </tr>
     </thead>
 
     <tbody>
-    {% for a in alarms %}
+    {% for m in mappings %}
         <tr>
-            <td>{{ a.TagPath }}</td>
-            <td>{{ a.Mp3File }}</td>
+            <td>{{ m.Influx_oldTag }}</td>
+            <td>{{ m.Influx_db }}</td>
+            <td class="arrow">&rarr;</td>
+            <td>{{ m.TagPath }}</td>
             <td>
                 <div class="row-actions">
                     <button
                         type="button"
                         class="btn-edit edit-click"
-                        data-alarmid="{{ a.AlarmId }}"
-                        data-tagid="{{ a.TagId }}"
-                        data-tagpath="{{ a.TagPath }}"
-                        data-alarmmode="{{ a.AlarmMode }}"
-                        data-thresholdhigh="{{ a.ThresholdHigh if a.ThresholdHigh is not none else '' }}"
-                        data-thresholdlow="{{ a.ThresholdLow if a.ThresholdLow is not none else '' }}"
-                        data-mp3file="{{ a.Mp3File }}"
-                        data-priority="{{ a.Priority }}"
-                        data-repeat="{{ a.Repeat if a.Repeat is not none else 3 }}"
+                        data-influxid="{{ m.InfluxId }}"
+                        data-tagid="{{ m.TagId }}"
+                        data-tagpath="{{ m.TagPath }}"
+                        data-influxdb="{{ m.Influx_db }}"
+                        data-oldtag="{{ m.Influx_oldTag }}"
                     >
                         Edit
                     </button>
 
                     <form
                         method="post"
-                        action="/delete/{{ a.AlarmId }}"
+                        action="/delete/{{ m.InfluxId }}"
                         class="inline-form delete-form"
-                        data-tagpath="{{ a.TagPath }}"
-                        data-mp3file="{{ a.Mp3File }}"
+                        data-oldtag="{{ m.Influx_oldTag }}"
+                        data-tagpath="{{ m.TagPath }}"
                     >
                         <button type="submit" class="btn-delete">Delete</button>
                     </form>
-
-                    <button
-                        type="button"
-                        class="btn-test test-click"
-                        data-mp3file="{{ a.Mp3File }}"
-                    >
-                        Test
-                    </button>
                 </div>
             </td>
         </tr>
     {% else %}
         <tr>
-            <td colspan="3">No alarm mappings found.</td>
+            <td colspan="5">No tag mappings found.</td>
         </tr>
     {% endfor %}
     </tbody>
@@ -513,101 +401,90 @@ button {
 
 <script>
 
+// --- pick a new tag from the OPC tree -> fill the form ---
 document.querySelectorAll(".tag-click").forEach(el => {
-
     el.addEventListener("click", () => {
-
-        document.querySelectorAll(".tag-click").forEach(x => {
-            x.classList.remove("selected-tag");
-        });
-
-        document.getElementById("alarm_id").value = "";
-
+        document.querySelectorAll(".tag-click").forEach(x => x.classList.remove("selected-tag"));
+        document.getElementById("influx_id").value = "";
         el.classList.add("selected-tag");
-
-        document.getElementById("tag_path").value =
-            el.dataset.path;
-
-        document.getElementById("tag_id").value =
-            el.dataset.tagid;
-
+        document.getElementById("tag_path").value = el.dataset.path;
+        document.getElementById("tag_id").value = el.dataset.tagid;
     });
-
 });
 
-document.querySelectorAll(".mp3-click").forEach(el => {
+// --- load old-tag suggestions when a DB is chosen ---
+function loadOldTags(db) {
+    const list = document.getElementById("oldtag_options");
+    const hint = document.getElementById("oldtag_hint");
+    list.innerHTML = "";
+    if (!db) { hint.textContent = ""; return; }
 
-    el.addEventListener("click", () => {
+    hint.textContent = "loading...";
+    fetch("/measurements?db=" + encodeURIComponent(db))
+        .then(r => r.json())
+        .then(data => {
+            const items = data.measurements || [];
+            list.innerHTML = "";
+            items.forEach(name => {
+                const opt = document.createElement("option");
+                opt.value = name;
+                list.appendChild(opt);
+            });
+            hint.textContent = data.error
+                ? ("Influx error: " + data.error + " (you can still type the name)")
+                : (items.length + " tag(s) loaded");
+        })
+        .catch(err => { hint.textContent = "load failed: " + err + " (you can still type)"; });
+}
 
-        document.querySelectorAll(".mp3-click").forEach(x => {
-            x.classList.remove("selected-mp3");
-        });
-
-        document.getElementById("alarm_id").value = "";
-
-        el.classList.add("selected-mp3");
-
-        document.getElementById("mp3_file").value =
-            el.dataset.file;
-
-    });
-
+document.getElementById("influx_db").addEventListener("change", e => {
+    sessionStorage.setItem("lastInfluxDb", e.target.value);
+    loadOldTags(e.target.value);
 });
 
+// --- keep the last chosen Influx DB after saving, so adding to the same DB is quick ---
+(() => {
+    const sel = document.getElementById("influx_db");
+    const saved = sessionStorage.getItem("lastInfluxDb");
+    if (saved && [...sel.options].some(o => o.value === saved)) {
+        sel.value = saved;
+        loadOldTags(saved);
+    }
+})();
+
+// --- Edit: fill the form from a table row ---
 document.querySelectorAll(".edit-click").forEach(el => {
-
     el.addEventListener("click", () => {
+        document.getElementById("influx_id").value = el.dataset.influxid;
+        document.getElementById("tag_path").value = el.dataset.tagpath;
+        document.getElementById("tag_id").value = el.dataset.tagid;
+        document.getElementById("influx_db").value = el.dataset.influxdb;
+        document.getElementById("influx_oldtag").value = el.dataset.oldtag;
+        sessionStorage.setItem("lastInfluxDb", el.dataset.influxdb);
+        loadOldTags(el.dataset.influxdb);
 
-        document.getElementById("alarm_id").value =
-            el.dataset.alarmid;
-
-        document.getElementById("tag_path").value =
-            el.dataset.tagpath;
-
-        document.getElementById("tag_id").value =
-            el.dataset.tagid;
-
-        document.getElementById("alarm_mode").value =
-            el.dataset.alarmmode;
-
-        document.getElementById("threshold_high").value =
-            el.dataset.thresholdhigh;
-
-        document.getElementById("threshold_low").value =
-            el.dataset.thresholdlow;
-
-        document.getElementById("mp3_file").value =
-            el.dataset.mp3file;
-
-        document.getElementById("priority").value =
-            el.dataset.priority;
-
-        document.getElementById("repeat_count").value =
-            el.dataset.repeat || "3";
-
-        document.querySelectorAll(".tag-click").forEach(x => {
-            x.classList.remove("selected-tag");
-        });
-
-        document.querySelectorAll(".mp3-click").forEach(x => {
-            x.classList.remove("selected-mp3");
-        });
-
+        document.querySelectorAll(".tag-click").forEach(x => x.classList.remove("selected-tag"));
         window.scrollTo({ top: 0, behavior: "smooth" });
-
     });
-
 });
 
-// --- draggable splitters: each resizes the panel on its left ---
+// --- Delete: confirm showing which mapping is being removed ---
+document.querySelectorAll(".delete-form").forEach(f => {
+    f.addEventListener("submit", e => {
+        const oldTag = f.dataset.oldtag || "(unknown)";
+        const tag = f.dataset.tagpath || "(unknown tag)";
+        if (!confirm("Delete this mapping?\n\nOld: " + oldTag + "\nNew: " + tag)) {
+            e.preventDefault();
+        }
+    });
+});
+
+// --- draggable column splitter ---
 document.querySelectorAll(".splitter").forEach(sp => {
-
     sp.addEventListener("mousedown", e => {
-
         const panel = sp.previousElementSibling;
         const startX = e.clientX;
         const startW = panel.getBoundingClientRect().width;
-
         sp.classList.add("dragging");
         document.body.style.userSelect = "none";
 
@@ -615,104 +492,85 @@ document.querySelectorAll(".splitter").forEach(sp => {
             const w = Math.max(120, startW + (ev.clientX - startX));
             panel.style.flex = "0 0 " + w + "px";
         }
-
         function onUp() {
             sp.classList.remove("dragging");
             document.body.style.userSelect = "";
             document.removeEventListener("mousemove", onMove);
             document.removeEventListener("mouseup", onUp);
         }
-
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", onUp);
-
         e.preventDefault();
     });
-
 });
 
-// --- horizontal splitter: drag to resize the mapping table height ---
+// --- horizontal splitter: resize the mapping table height ---
 (() => {
     const bar = document.getElementById("table-splitter");
     const topRow = document.querySelector(".top-row");
     if (!bar || !topRow) return;
 
     bar.addEventListener("mousedown", e => {
-
         const startY = e.clientY;
         const startH = topRow.getBoundingClientRect().height;
-
         bar.classList.add("dragging");
         document.body.style.userSelect = "none";
 
         function onMove(ev) {
-            // drag up -> top panels shrink -> table grows to fill; drag down -> reverse
             const h = Math.max(120, startH + (ev.clientY - startY));
             topRow.style.height = h + "px";
         }
-
         function onUp() {
             bar.classList.remove("dragging");
             document.body.style.userSelect = "";
             document.removeEventListener("mousemove", onMove);
             document.removeEventListener("mouseup", onUp);
         }
-
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", onUp);
-
         e.preventDefault();
     });
 })();
 
-// --- Delete: confirm showing which tag / mp3 is being removed ---
-document.querySelectorAll(".delete-form").forEach(f => {
+// --- resizable columns in the mapping table ---
+(() => {
+    const table = document.querySelector(".mapping-table");
+    if (!table) return;
 
-    f.addEventListener("submit", e => {
+    table.style.tableLayout = "fixed";
+    const ths = table.querySelectorAll("thead th");
 
-        const tag = f.dataset.tagpath || "(unknown tag)";
-        const mp3 = f.dataset.mp3file || "(no mp3)";
+    ths.forEach(th => {
+        // lock the current rendered width so fixed layout starts consistently
+        th.style.width = th.getBoundingClientRect().width + "px";
 
-        const ok = confirm(
-            "Delete this alarm mapping?\n\n" +
-            "Tag: " + tag + "\n" +
-            "MP3: " + mp3
-        );
+        const grip = document.createElement("div");
+        grip.className = "col-resizer";
+        th.appendChild(grip);
 
-        if (!ok) {
+        grip.addEventListener("mousedown", e => {
             e.preventDefault();
-        }
-    });
+            e.stopPropagation();
+            const startX = e.clientX;
+            const startW = th.getBoundingClientRect().width;
+            grip.classList.add("dragging");
+            document.body.style.userSelect = "none";
 
-});
-
-// --- Test button: preview the alarm's MP3 in the browser ---
-let testAudio = null;
-
-document.querySelectorAll(".test-click").forEach(el => {
-
-    el.addEventListener("click", () => {
-
-        const file = el.dataset.mp3file;
-
-        if (!file) {
-            alert("No MP3 file set for this alarm.");
-            return;
-        }
-
-        if (testAudio) {
-            testAudio.pause();
-        }
-
-        testAudio = new Audio("/mp3/" + encodeURIComponent(file));
-
-        testAudio.play().catch(() => {
-            alert("Cannot play '" + file + "'.\nFile not found on the MP3 share (Z:\\).");
+            function onMove(ev) {
+                const w = Math.max(40, startW + (ev.clientX - startX));
+                th.style.width = w + "px";
+            }
+            function onUp() {
+                grip.classList.remove("dragging");
+                document.body.style.userSelect = "";
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+            }
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
         });
-
     });
-
-});
+})();
 
 </script>
 

@@ -1,22 +1,20 @@
-
 from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-import pyodbc, os
+import pyodbc
 import subprocess
 import sys
 
-from config.config import *
+import requests
 
-from pyModbusTCP.client import ModbusClient
+from config.config import *
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# MP3_FOLDER and BROWSER_SCRIPT come from config.config (env-backed, with defaults)
 
 def get_conn():
     return pyodbc.connect(
@@ -24,46 +22,6 @@ def get_conn():
         f"SERVER={SQL_SERVER};DATABASE={SQL_DB};UID={SQL_USER};PWD={SQL_PASS};"
     )
 
-def reload_alarm():
-
-    try:
-
-        c = ModbusClient(
-            host="172.28.231.251",
-            port=502,
-            auto_open=True
-        )
-
-        regs = c.read_holding_registers(
-            12002,
-            1
-        )
-
-        if not regs:
-
-            print(
-                "READ RELOAD_ALARM FAILED"
-            )
-
-            return
-
-        current = regs[0]
-
-        c.write_single_register(
-            12002,
-            current + 1
-        )
-
-        print(
-            f"RELOAD_ALARM => {current+1}"
-        )
-
-    except Exception as ex:
-
-        print(
-            "RELOAD_ALARM ERROR:",
-            ex
-        )
 
 def build_tree(rows, used_tagids=None):
     used_tagids = used_tagids or set()
@@ -86,16 +44,39 @@ def build_tree(rows, used_tagids=None):
 
     return tree
 
+
+def influx_measurements(db):
+    """Return the list of measurement (old-tag) names in an InfluxDB 1.x database."""
+    auth = (INFLUX_USER, INFLUX_PASS) if INFLUX_USER else None
+
+    resp = requests.get(
+        f"http://{INFLUX_HOST}:{INFLUX_PORT}/query",
+        params={"db": db, "q": "SHOW MEASUREMENTS"},
+        auth=auth,
+        timeout=10,
+    )
+    resp.raise_for_status()
+
+    data = resp.json()
+    names = []
+
+    for result in data.get("results", []):
+        for series in result.get("series", []):
+            for value in series.get("values", []):
+                if value:
+                    names.append(value[0])
+
+    return sorted(names)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     conn = get_conn()
     cur = conn.cursor()
 
-    # tags / mp3 files already mapped to an alarm (shown but greyed-out, not selectable)
-    cur.execute("SELECT TagId, Mp3File FROM Alarm_Lists")
-    used_rows = cur.fetchall()
-    used_tagids = {r.TagId for r in used_rows}
-    used_mp3 = {(r.Mp3File or "").lower() for r in used_rows}
+    # new tags already mapped (shown greyed-out in the tree, not selectable)
+    cur.execute("SELECT TagId FROM InfluxTag_Lists")
+    used_tagids = {r.TagId for r in cur.fetchall()}
 
     cur.execute("""
         SELECT TagId, Path, DataType
@@ -103,180 +84,115 @@ def home(request: Request):
         WHERE IsActive = 1
         ORDER BY Path
     """)
-
     tags = cur.fetchall()
 
     tree = build_tree(tags, used_tagids)
 
-    mp3_files = []
-    if os.path.exists(MP3_FOLDER):
-        mp3_files = sorted([f for f in os.listdir(MP3_FOLDER) if f.lower().endswith(".mp3")])
-
     cur.execute("""
-        SELECT AlarmId, TagId, TagPath, AlarmMode,
-               ThresholdHigh, ThresholdLow, Mp3File,
-               Priority, EnableAlarm, [Repeat]
-        FROM Alarm_Lists
+        SELECT InfluxId, TagId, TagPath, Influx_db, Influx_oldTag
+        FROM InfluxTag_Lists
         ORDER BY TagPath
     """)
-    alarms = cur.fetchall()
+    mappings = cur.fetchall()
 
     conn.close()
 
     return templates.TemplateResponse(request, "influxTag_list.html", {
         "request": request,
         "tree": tree,
-        "mp3_files": mp3_files,
-        "used_mp3": used_mp3,
-        "alarms": alarms
+        "mappings": mappings,
+        "influx_dbs": INFLUX_DBS,
     })
 
+
+@app.get("/measurements")
+def measurements(db: str):
+    # old-tag suggestions for the datalist; db must be one of the configured ones
+    if db not in INFLUX_DBS:
+        return JSONResponse({"error": "unknown db"}, status_code=400)
+
+    try:
+        return JSONResponse({"measurements": influx_measurements(db)})
+    except Exception as ex:
+        return JSONResponse({"error": str(ex), "measurements": []}, status_code=200)
+
+
 @app.post("/save")
-def save_alarm(
-    alarmid: str = Form(""),
+def save_mapping(
+    influxid: str = Form(""),
     tagid: int = Form(...),
     tagpath: str = Form(...),
-    alarmmode: str = Form(...),
-    thresholdhigh: float = Form(None),
-    thresholdlow: float = Form(None),
-    mp3file: str = Form(...),
-    priority: int = Form(1),
-    repeatcount: str = Form("3")
+    influx_db: str = Form(...),
+    influx_oldtag: str = Form(...),
 ):
-    # default to 3 when blank or invalid
-    try:
-        repeat = int(repeatcount)
-    except (ValueError, TypeError):
-        repeat = 3
-    if repeat < 1:
-        repeat = 3
-
     conn = get_conn()
     cur = conn.cursor()
 
-    # กัน Tag ซ้ำ
-    if not alarmid:
-
-        cur.execute("""
-            SELECT COUNT(*)
-            FROM Alarm_Lists
-            WHERE TagId = ?
-        """, (tagid,))
-
+    # prevent mapping the same new tag twice (on insert only)
+    if not influxid:
+        cur.execute("SELECT COUNT(*) FROM InfluxTag_Lists WHERE TagId = ?", (tagid,))
         if cur.fetchone()[0] > 0:
-
             conn.close()
+            return RedirectResponse("/", status_code=303)
 
-            return RedirectResponse(
-                "/",
-                status_code=303
-            )
-
-    if alarmid:
+    if influxid:
         cur.execute("""
-            UPDATE Alarm_Lists
+            UPDATE InfluxTag_Lists
             SET TagId = ?,
                 TagPath = ?,
-                AlarmMode = ?,
-                ThresholdHigh = ?,
-                ThresholdLow = ?,
-                Mp3File = ?,
-                Priority = ?,
-                [Repeat] = ?,
+                Influx_db = ?,
+                Influx_oldTag = ?,
                 UpdatedTime = GETDATE()
-            WHERE AlarmId = ?
+            WHERE InfluxId = ?
         """, (
             tagid,
             tagpath,
-            alarmmode,
-            thresholdhigh,
-            thresholdlow,
-            mp3file,
-            priority,
-            repeat,
-            int(alarmid)
+            influx_db,
+            influx_oldtag,
+            int(influxid),
         ))
     else:
         cur.execute("""
-            INSERT INTO Alarm_Lists (
+            INSERT INTO InfluxTag_Lists (
                 TagId,
                 TagPath,
-                AlarmMode,
-                ThresholdHigh,
-                ThresholdLow,
-                Mp3File,
-                Priority,
-                [Repeat],
-                RepeatEnable,
-                EnableAlarm,
+                Influx_db,
+                Influx_oldTag,
                 CreatedTime,
                 UpdatedTime
             )
-            VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, 1, 1,
-                GETDATE(),
-                GETDATE()
-            )
+            VALUES (?, ?, ?, ?, GETDATE(), GETDATE())
         """, (
             tagid,
             tagpath,
-            alarmmode,
-            thresholdhigh,
-            thresholdlow,
-            mp3file,
-            priority,
-            repeat
+            influx_db,
+            influx_oldtag,
         ))
 
     conn.commit()
     conn.close()
-    reload_alarm()
 
     return RedirectResponse("/", status_code=303)
 
-@app.post("/delete/{alarm_id}")
-def delete_alarm(alarm_id: int):
+
+@app.post("/delete/{influx_id}")
+def delete_mapping(influx_id: int):
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("""
-        DELETE FROM Alarm_Lists
-        WHERE AlarmId = ?
-    """, (alarm_id,))
+    cur.execute("DELETE FROM InfluxTag_Lists WHERE InfluxId = ?", (influx_id,))
 
     conn.commit()
     conn.close()
-    reload_alarm()
 
     return RedirectResponse("/", status_code=303)
 
+
 @app.post("/refresh")
 def refresh_browser():
+    # rebuild the OPC tag tree (e.g. after adding a machine). Optional: only runs
+    # when BROWSER_SCRIPT is configured. Does NOT touch InfluxTag_Lists.
+    if BROWSER_SCRIPT:
+        subprocess.run([sys.executable, BROWSER_SCRIPT])
 
-    # rebuild the OPC tag tree only (e.g. after adding a machine).
-    # does NOT touch Alarm_Lists.
-    subprocess.run([
-        sys.executable,
-        BROWSER_SCRIPT
-    ])
-
-    return RedirectResponse(
-        "/",
-        status_code=303
-    )
-
-@app.get("/mp3/{filename}")
-def serve_mp3(filename: str):
-    # serve an MP3 from MP3_FOLDER so the browser can preview the alarm sound.
-    # restrict to a plain basename ending in .mp3 to block path traversal.
-    name = os.path.basename(filename)
-
-    if name != filename or not name.lower().endswith(".mp3"):
-        return HTMLResponse("Invalid file", status_code=400)
-
-    path = os.path.join(MP3_FOLDER, name)
-
-    if not os.path.isfile(path):
-        return HTMLResponse("Not found", status_code=404)
-
-    return FileResponse(path, media_type="audio/mpeg")
+    return RedirectResponse("/", status_code=303)
